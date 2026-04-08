@@ -35,7 +35,7 @@ public sealed class CodeGenerator
         var trimmedFree = freeText?.Trim();
         if (!string.IsNullOrWhiteSpace(trimmedFree))
         {
-            sb.Append(' ');
+            sb.Append('_');
             sb.Append(trimmedFree);
         }
 
