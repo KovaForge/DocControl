@@ -32,7 +32,7 @@ public sealed class CodeGenerator
         var baseCode = BuildCode(key, number);
         var sb = new StringBuilder(baseCode);
 
-        var trimmedFree = freeText?.Trim();
+        var trimmedFree = freeText?.Trim().Replace(' ', '_');
         if (!string.IsNullOrWhiteSpace(trimmedFree))
         {
             sb.Append('_');
