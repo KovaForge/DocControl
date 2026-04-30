@@ -176,6 +176,43 @@ Deliver:
 - Any follow-up recommendations.
 ```
 
+## Implemented local integration
+
+Added a direct API helper at `bin/doccontrol` backed by `tools/doccontrol/doccontrol.py`.
+
+Confirmed API/auth model from repo source:
+
+- Auth uses `Authorization: Bearer <token>` for deployed password-auth sessions. Tokens are issued by `POST /api/auth/login` as `authToken` when `AuthTokenSecret` is configured. Static Web Apps auth can also bind via `x-ms-client-principal`; local legacy `x-user-id` headers are dev/legacy only and are not used by the CLI.
+- Project discovery: `GET /api/projects`.
+- Document listing/search: `GET /api/projects/{projectId}/documents?q=<text>&take=<n>&skip=<n>`.
+- Safe preview: `POST /api/projects/{projectId}/documents/preview`.
+- Remote allocation/save: `POST /api/projects/{projectId}/documents`.
+- Required allocation payload fields depend on project settings, but the default app requires `level1`, `level2`, and `level3`; optional fields are `level4`, `level5`, `level6`, `freeText`, `extension`, and `originalQuery`.
+
+Sanitized curl examples:
+
+```bash
+curl -H "Authorization: Bearer <DOCCONTROL_TOKEN>" \
+  "https://dc.delpach.com/api/projects"
+
+curl -H "Authorization: Bearer <DOCCONTROL_TOKEN>" \
+  "https://dc.delpach.com/api/projects/<projectId>/documents?q=MIC-GAI&take=50"
+
+curl -X POST "https://dc.delpach.com/api/projects/<projectId>/documents/preview" \
+  -H "Authorization: Bearer <DOCCONTROL_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"level1":"MIC","level2":"GAI","level3":"DOC","freeText":"Example","extension":"pdf"}'
+
+curl -X POST "https://dc.delpach.com/api/projects/<projectId>/documents" \
+  -H "Authorization: Bearer <DOCCONTROL_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"level1":"MIC","level2":"GAI","level3":"DOC","freeText":"Example","extension":"pdf"}'
+```
+
+OpenClaw-facing skill instructions live at `docs/openclaw-doccontrol-skill/SKILL.md`.
+
+Live E2E listing/preview/allocation remains blocked until a valid `DOCCONTROL_TOKEN` is available in the OpenClaw runtime. Bad-token validation against `https://dc.delpach.com` returns a sanitized `401 Unauthorized` JSON error.
+
 ## Recommendation
 
 Use direct API integration first. Browser automation should only be a fallback if auth/API access blocks a proper CLI/OpenClaw integration.
