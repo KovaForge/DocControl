@@ -104,6 +104,35 @@ Acceptance:
 OpenClaw can retrieve existing file names from dc.delpach.com and allocate/save new file names remotely without browser scraping.
 ```
 
+## Stage 3B — Allocate new DocControl file names
+
+```text
+Extend the DocControl integration so OpenClaw can allocate a new file name, save it remotely in DocControl, and receive the allocated file name back.
+
+Required behavior:
+- Accept project id/name plus document naming fields.
+- Call the DocControl create/allocate endpoint, likely:
+  POST /api/projects/{projectId}/documents
+- Support preview-only separately, likely:
+  POST /api/projects/{projectId}/documents/preview
+- For actual allocation, the integration must persist the new document remotely.
+- Return the allocated `fileName`, document id/number, and project metadata to OpenClaw.
+- Do not expose destructive operations.
+- Do not hardcode credentials.
+
+CLI/API wrapper commands:
+- doccontrol preview-name --project <id> [fields...]
+- doccontrol allocate-name --project <id> [fields...]
+- doccontrol files --project <id>
+- doccontrol search --project <id> --query <text>
+
+Acceptance:
+- Preview can show the next candidate file name without saving.
+- Allocate creates/saves the new DocControl document remotely.
+- OpenClaw receives the final saved `fileName`.
+- Re-running allocation does not silently duplicate unless explicitly requested.
+```
+
 ## Stage 4 — Allocation safeguards
 
 ```text
