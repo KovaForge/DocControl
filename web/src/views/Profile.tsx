@@ -142,7 +142,7 @@ export default function Profile() {
 
   const verifyMfa = async () => {
     if (!mfaCode.trim()) {
-      setMfaError('Enter the 6-digit code from your authenticator app.');
+      setMfaError('Enter your MFA code or backup code.');
       return;
     }
     setMfaLoading(true);
@@ -165,11 +165,17 @@ export default function Profile() {
   const generateBackupCodes = async () => {
     setBackupError(null);
     setBackupMessage(null);
+    if (backupCodes && backupCodes.length > 0) {
+      const confirmed = window.confirm('Regenerating will invalidate your current backup codes. Continue?');
+      if (!confirmed) {
+        return;
+      }
+    }
     setBackupLoading(true);
     try {
       const result = await AuthApi.backupCodes();
       setBackupCodes(result.codes ?? []);
-      setBackupMessage('Backup codes generated. Store them somewhere safe.');
+      setBackupMessage(backupCodes ? 'Backup codes regenerated. Previous codes are no longer valid.' : 'Backup codes generated. Store them somewhere safe.');
     } catch (err: any) {
       setBackupError(err.message ?? 'Failed to generate backup codes');
     } finally {
@@ -190,6 +196,18 @@ export default function Profile() {
     } catch (err: any) {
       setBackupError(err.message ?? 'Failed to copy backup codes');
     }
+  };
+
+  const saveBackupCodes = () => {
+    if (!backupCodes || backupCodes.length === 0) return;
+    const blob = new Blob([`${backupCodes.join('\n')}\n`], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'doccontrol-backup-codes.txt';
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setBackupMessage('Backup codes saved as a text file.');
   };
 
   return (
@@ -267,25 +285,31 @@ export default function Profile() {
           )}
           {setup && (
             <>
-              <label>6-digit code</label>
-              <input value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} placeholder="123456" inputMode="numeric" />
+              <label>MFA or backup code</label>
+              <input value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} placeholder="123456 or ABCDE-FGHIJ" inputMode="text" />
               <button type="button" onClick={verifyMfa} disabled={mfaLoading || authMode !== 'password'}>
                 {mfaLoading ? 'Verifying...' : 'Verify'}
               </button>
             </>
           )}
-          <div>
-            <strong>Backup codes</strong>
+          <section aria-labelledby="backup-codes-heading">
+            <h4 id="backup-codes-heading" style={{ margin: 0 }}>Backup codes</h4>
             <p className="muted" style={{ margin: '6px 0 0' }}>
               Generate one-time backup codes in case you lose access to your authenticator.
             </p>
-          </div>
+          </section>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button type="button" onClick={generateBackupCodes} disabled={backupLoading || authMode !== 'password' || !user?.mfaEnabled}>
               {backupLoading ? 'Generating...' : backupCodes ? 'Regenerate codes' : 'Generate codes'}
             </button>
+            {(authMode !== 'password' || !user?.mfaEnabled) && (
+              <span className="muted" style={{ alignSelf: 'center', fontSize: 13 }}>Available for email + MFA sign-in only.</span>
+            )}
             <button type="button" onClick={copyBackupCodes} disabled={!backupCodes || backupCodes.length === 0}>
               Copy to clipboard
+            </button>
+            <button type="button" onClick={saveBackupCodes} disabled={!backupCodes || backupCodes.length === 0}>
+              Save as .txt
             </button>
           </div>
           {backupCodes && backupCodes.length > 0 && (
@@ -312,6 +336,7 @@ export default function Profile() {
           <p className="muted">No Microsoft account connected.</p>
         )}
         <div className="stack">
+          <p className="muted" style={{ margin: 0 }}>Re-authenticate with Microsoft if your session expires.</p>
           <a
             className="button"
             href="/.auth/login/aad?post_login_redirect_uri=/profile"

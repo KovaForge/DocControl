@@ -201,6 +201,6 @@ button:hover {
   .auth-panel {
     grid-column: 1;
     justify-self: center;
-    margin-top: 180px;
+    margin-top: clamp(120px, 32vw, 180px);
   }
 }
