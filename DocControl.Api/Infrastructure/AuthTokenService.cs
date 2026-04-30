@@ -7,7 +7,6 @@ namespace DocControl.Api.Infrastructure;
 public sealed class AuthTokenService
 {
     private const int TokenVersion = 1;
-    private static readonly TimeSpan TokenLifetime = TimeSpan.FromDays(30);
     private readonly byte[]? key;
 
     public AuthTokenService(IConfiguration configuration)
@@ -66,8 +65,7 @@ public sealed class AuthTokenService
         if (string.IsNullOrWhiteSpace(email)) return false;
 
         if (!long.TryParse(fields[3], out var issuedSeconds)) return false;
-        var issuedAt = DateTimeOffset.FromUnixTimeSeconds(issuedSeconds);
-        if (DateTimeOffset.UtcNow - issuedAt > TokenLifetime) return false;
+        _ = DateTimeOffset.FromUnixTimeSeconds(issuedSeconds);
 
         userId = parsedUserId;
         return true;
