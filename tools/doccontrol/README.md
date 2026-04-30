@@ -4,18 +4,27 @@ Small env-configured helper for safe DocControl reads and remote document-name a
 
 ## Configuration
 
-Credentials stay outside the repo:
+Credentials stay outside the repo. Preferred setup is Microsoft device-code login:
+
+```bash
+bin/doccontrol login microsoft
+```
+
+The command opens a Microsoft device-code flow, exchanges the verified Microsoft identity for a DocControl bearer token, and stores only the DocControl token in `~/.config/doccontrol/config.json` with user-only file permissions. Microsoft tokens are not stored.
+
+Environment overrides still work:
 
 ```bash
 export DOCCONTROL_BASE_URL="https://dc.delpach.com"
 export DOCCONTROL_TOKEN="<doccontrol bearer token>"
 ```
 
-`DOCCONTROL_TOKEN` is the bearer token returned by DocControl password auth (`authToken`) or an equivalent deployed auth token. The CLI never prints the token.
+`DOCCONTROL_TOKEN` is the bearer token returned by DocControl auth. The CLI never prints the token.
 
 ## Commands
 
 ```bash
+bin/doccontrol login microsoft
 bin/doccontrol projects
 bin/doccontrol files --project 1 --take 50
 bin/doccontrol search --project 1 --query MIC-GAI
@@ -39,3 +48,5 @@ bin/doccontrol search-files --project 1 --query MIC-GAI
 - Before allocation, the CLI searches existing documents for matching levels and free text. If matches exist, it returns `duplicate-risk` and does not create anything unless `--force` is supplied.
 - No destructive DocControl endpoints are exposed.
 - Auth failures are sanitized and do not echo tokens.
+- `login microsoft` stores only the minted DocControl bearer token locally, never the Microsoft id token.
+- `logout` clears the stored DocControl token.

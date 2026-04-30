@@ -17,6 +17,7 @@ public sealed class AuthFunctions
     private readonly UserAuthRepository userAuthRepository;
     private readonly AuthContextFactory authFactory;
     private readonly AuthTokenService authTokenService;
+    private readonly MicrosoftTokenValidator microsoftTokenValidator;
     private readonly MfaService mfaService;
     private readonly JsonSerializerOptions jsonOptions;
     private readonly ILogger<AuthFunctions> logger;
@@ -26,6 +27,7 @@ public sealed class AuthFunctions
         UserAuthRepository userAuthRepository,
         AuthContextFactory authFactory,
         AuthTokenService authTokenService,
+        MicrosoftTokenValidator microsoftTokenValidator,
         MfaService mfaService,
         IOptions<JsonSerializerOptions> jsonOptions,
         ILogger<AuthFunctions> logger)
@@ -34,9 +36,78 @@ public sealed class AuthFunctions
         this.userAuthRepository = userAuthRepository;
         this.authFactory = authFactory;
         this.authTokenService = authTokenService;
+        this.microsoftTokenValidator = microsoftTokenValidator;
         this.mfaService = mfaService;
         this.jsonOptions = jsonOptions.Value;
         this.logger = logger;
+    }
+
+    [Function("Auth_Microsoft_DeviceCode_Config")]
+    public async Task<HttpResponseData> GetMicrosoftDeviceCodeConfigAsync(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "auth/microsoft/device-code/config")] HttpRequestData req)
+    {
+        var options = microsoftTokenValidator.GetDeviceCodeOptions();
+        if (options is null)
+        {
+            return await req.ErrorAsync(HttpStatusCode.ServiceUnavailable, "Microsoft CLI login is not configured");
+        }
+
+        return await req.ToJsonAsync(new
+        {
+            options.ClientId,
+            options.TenantId,
+            options.Scopes
+        }, HttpStatusCode.OK, jsonOptions);
+    }
+
+    [Function("Auth_Microsoft_Cli_Token")]
+    public async Task<HttpResponseData> ExchangeMicrosoftCliTokenAsync(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "auth/microsoft/cli-token")] HttpRequestData req)
+    {
+        MicrosoftCliTokenRequest? payload;
+        try
+        {
+            payload = await JsonSerializer.DeserializeAsync<MicrosoftCliTokenRequest>(req.Body, jsonOptions, req.FunctionContext.CancellationToken);
+        }
+        catch (JsonException ex)
+        {
+            logger.LogWarning(ex, "Invalid Microsoft CLI token payload");
+            return await req.ErrorAsync(HttpStatusCode.BadRequest, "Invalid JSON payload");
+        }
+
+        if (payload is null || string.IsNullOrWhiteSpace(payload.IdToken))
+        {
+            return await req.ErrorAsync(HttpStatusCode.BadRequest, "Microsoft id token is required");
+        }
+
+        var microsoftUser = await microsoftTokenValidator
+            .ValidateIdTokenAsync(payload.IdToken, req.FunctionContext.CancellationToken)
+            .ConfigureAwait(false);
+        if (microsoftUser is null)
+        {
+            return await req.ErrorAsync(HttpStatusCode.Unauthorized, "Invalid Microsoft token");
+        }
+
+        var user = await userRepository.GetByEmailAsync(microsoftUser.Email, req.FunctionContext.CancellationToken).ConfigureAwait(false)
+                   ?? await userRepository.RegisterAsync(microsoftUser.Email, microsoftUser.DisplayName, req.FunctionContext.CancellationToken).ConfigureAwait(false);
+        await userAuthRepository.EnsureExistsAsync(user.Id, req.FunctionContext.CancellationToken).ConfigureAwait(false);
+        var auth = await userAuthRepository.GetAsync(user.Id, req.FunctionContext.CancellationToken).ConfigureAwait(false);
+        var authToken = authTokenService.IssueToken(user.Id, user.Email);
+        if (string.IsNullOrWhiteSpace(authToken))
+        {
+            return await req.ErrorAsync(HttpStatusCode.InternalServerError, "DocControl token issuing is not configured");
+        }
+
+        return await req.ToJsonAsync(new
+        {
+            user.Id,
+            user.Email,
+            user.DisplayName,
+            MfaEnabled = auth?.MfaEnabled ?? false,
+            AuthToken = authToken,
+            RequiresPasswordReset = false,
+            Provider = "microsoft"
+        }, HttpStatusCode.OK, jsonOptions);
     }
 
     [Function("Auth_Register")]
@@ -476,6 +547,7 @@ public sealed class AuthFunctions
 internal sealed record RegisterRequest(string Email, string? DisplayName, string Password);
 internal sealed record LoginRequest(string Email, string Password);
 internal sealed record InitialPasswordRequest(string Email, string Password);
+internal sealed record MicrosoftCliTokenRequest(string IdToken);
 internal sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 internal sealed record UpdateProfileRequest(string DisplayName);
 internal sealed record VerifyMfaRequest(string Code);

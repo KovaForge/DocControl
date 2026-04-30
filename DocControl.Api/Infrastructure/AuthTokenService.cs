@@ -7,7 +7,9 @@ namespace DocControl.Api.Infrastructure;
 public sealed class AuthTokenService
 {
     private const int TokenVersion = 1;
+    private static readonly TimeSpan DefaultTokenLifetime = TimeSpan.FromDays(30);
     private readonly byte[]? key;
+    private readonly TimeSpan tokenLifetime;
 
     public AuthTokenService(IConfiguration configuration)
     {
@@ -16,6 +18,11 @@ public sealed class AuthTokenService
         {
             key = Encoding.UTF8.GetBytes(secret);
         }
+
+        var lifetimeHours = configuration.GetValue<double?>("AuthTokenLifetimeHours");
+        tokenLifetime = lifetimeHours is > 0
+            ? TimeSpan.FromHours(lifetimeHours.Value)
+            : DefaultTokenLifetime;
     }
 
     public string? IssueToken(long userId, string email)
@@ -65,7 +72,8 @@ public sealed class AuthTokenService
         if (string.IsNullOrWhiteSpace(email)) return false;
 
         if (!long.TryParse(fields[3], out var issuedSeconds)) return false;
-        _ = DateTimeOffset.FromUnixTimeSeconds(issuedSeconds);
+        var issuedAt = DateTimeOffset.FromUnixTimeSeconds(issuedSeconds);
+        if (DateTimeOffset.UtcNow - issuedAt > tokenLifetime) return false;
 
         userId = parsedUserId;
         return true;
