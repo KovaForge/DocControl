@@ -19,6 +19,18 @@
       ]
     },
     {
+      "route": "/api/auth/microsoft/device-code/config",
+      "allowedRoles": [
+        "anonymous"
+      ]
+    },
+    {
+      "route": "/api/auth/microsoft/cli-token",
+      "allowedRoles": [
+        "anonymous"
+      ]
+    },
+    {
       "route": "/api/*",
       "allowedRoles": [
         "authenticated"
