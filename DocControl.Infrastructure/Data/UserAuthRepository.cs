@@ -61,7 +61,7 @@ public sealed class UserAuthRepository
     public async Task SaveTotpAsync(long userId, string secret, bool verified, CancellationToken cancellationToken = default)
     {
         var protectedSecret = ProtectSecret(secret);
-        var state = new TotpState(protectedSecret, DateTime.UtcNow, verified ? DateTime.UtcNow : null, null, null);
+        var state = new TotpState(protectedSecret, DateTime.UtcNow, verified ? DateTime.UtcNow : null, null, null, null);
         await SaveTotpStateAsync(userId, state, verified, cancellationToken).ConfigureAwait(false);
     }
 
@@ -128,7 +128,8 @@ public sealed class UserAuthRepository
                 state.CreatedAtUtc,
                 state.VerifiedAtUtc,
                 pendingSecret,
-                state.PendingCreatedAtUtc);
+                state.PendingCreatedAtUtc,
+                state.BackupCodes);
             return JsonSerializer.Serialize(updated);
         }
         catch (JsonException)
@@ -146,9 +147,12 @@ public sealed class UserAuthRepository
     }
 }
 
+public sealed record BackupCode(string Salt, string Hash);
+
 public sealed record TotpState(
     string Secret,
     DateTime CreatedAtUtc,
     DateTime? VerifiedAtUtc,
     string? PendingSecret,
-    DateTime? PendingCreatedAtUtc);
+    DateTime? PendingCreatedAtUtc,
+    IReadOnlyList<BackupCode>? BackupCodes);

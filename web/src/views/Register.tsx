@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AuthApi } from '../lib/api';
 import { useAuth } from '../lib/authContext';
+import authBackground from '../assets/background.png';
 
 export default function Register() {
   const { user, setUser, clearUser } = useAuth();
@@ -87,24 +88,28 @@ export default function Register() {
     localStorage.setItem('dc.mfa', mfaEnabled ? 'true' : 'false');
   };
 
+  const authBackgroundStyle = { backgroundImage: `url(${authBackground})` };
+
   if (!isDev && authMode === 'microsoft') {
     return (
-      <div className="page" style={{ maxWidth: 520, margin: '80px auto' }}>
-        <h1>Sign in</h1>
-        <p className="muted">Use your Microsoft account to access DocControl, or sign in with email + MFA.</p>
-        <div className="card stack" style={{ marginTop: 16 }}>
-          {checkingAuth && <div className="muted">Checking sign-in status...</div>}
-          <a
-            className="button"
-            href="/.auth/login/aad?post_login_redirect_uri=/"
-            style={{ textAlign: 'center', textDecoration: 'none' }}
-            onClick={setMicrosoftMode}
-          >
-            Sign in with Microsoft
-          </a>
-          <button type="button" onClick={setPasswordMode} style={{ background: '#334155', color: '#e2e8f0' }}>
-            Use email + MFA
-          </button>
+      <div className="auth-screen" style={authBackgroundStyle}>
+        <div className="page auth-panel">
+          <h1>Sign in</h1>
+          <p className="muted">Use your Microsoft account to access DocControl, or sign in with email + MFA.</p>
+          <div className="card stack" style={{ marginTop: 16 }}>
+            {checkingAuth && <div className="muted">Checking sign-in status...</div>}
+            <a
+              className="button"
+              href="/.auth/login/aad?post_login_redirect_uri=/"
+              style={{ textAlign: 'center', textDecoration: 'none' }}
+              onClick={setMicrosoftMode}
+            >
+              Sign in with Microsoft
+            </a>
+            <button type="button" onClick={setPasswordMode} style={{ background: '#334155', color: '#e2e8f0' }}>
+              Use email + MFA
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -197,7 +202,7 @@ export default function Register() {
       });
       if (registered.mfaEnabled) {
         if (!mfaCode.trim()) {
-          setError('Enter your 6-digit MFA code');
+          setError('Enter your MFA or backup code');
           mfaInput?.focus();
           clearUser();
           return;
@@ -266,7 +271,7 @@ export default function Register() {
       });
       if (registered.mfaEnabled) {
         if (!mfaCode.trim()) {
-          setError('Enter your 6-digit MFA code');
+          setError('Enter your MFA or backup code');
           mfaInput?.focus();
           clearUser();
           return;
@@ -311,7 +316,8 @@ export default function Register() {
   };
 
   return (
-    <div className="page" style={{ maxWidth: 520, margin: '80px auto' }}>
+    <div className="auth-screen" style={authBackgroundStyle}>
+      <div className="page auth-panel">
       <h1>
         {mode === 'register' ? 'Create your account' : mode === 'login' ? 'Log in' : 'Set your password'}
       </h1>
@@ -370,13 +376,13 @@ export default function Register() {
 
         {(mode === 'login' || mode === 'setPassword') && (
           <>
-            <label>6-digit MFA code</label>
+            <label>MFA or backup code</label>
             <input
               ref={setMfaInput}
               value={mfaCode}
               onChange={(e) => setMfaCode(e.target.value)}
-              placeholder="123456"
-              inputMode="numeric"
+              placeholder="123456 or ABCDE-FGHIJ"
+              inputMode="text"
             />
           </>
         )}
@@ -438,6 +444,7 @@ export default function Register() {
           </p>
         </div>
       )}
+      </div>
     </div>
   );
 }

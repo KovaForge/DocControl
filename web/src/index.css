@@ -172,3 +172,35 @@ button:hover {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
 }
+
+.auth-screen {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  align-items: center;
+  padding: 64px 32px;
+  background-repeat: no-repeat;
+  background-position: left center;
+  background-size: contain;
+}
+
+.auth-panel {
+  grid-column: 2;
+  width: min(520px, 100%);
+  justify-self: start;
+}
+
+@media (max-width: 900px) {
+  .auth-screen {
+    grid-template-columns: 1fr;
+    padding: 48px 20px;
+    background-position: center 24px;
+    background-size: 70%;
+  }
+
+  .auth-panel {
+    grid-column: 1;
+    justify-self: center;
+    margin-top: clamp(120px, 32vw, 180px);
+  }
+}

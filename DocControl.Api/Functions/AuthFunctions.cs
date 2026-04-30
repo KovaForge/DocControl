@@ -1,4 +1,6 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using DocControl.Api.Infrastructure;
 using DocControl.Api.Services;
@@ -21,6 +23,9 @@ public sealed class AuthFunctions
     private readonly MfaService mfaService;
     private readonly JsonSerializerOptions jsonOptions;
     private readonly ILogger<AuthFunctions> logger;
+    private const int BackupCodeCount = 10;
+    private const int BackupCodeLength = 10;
+    private const int BackupCodeGroupSize = 5;
 
     public AuthFunctions(
         UserRepository userRepository,
@@ -383,7 +388,13 @@ public sealed class AuthFunctions
 
             if (state is not null && !string.IsNullOrWhiteSpace(state.Secret))
             {
-                var pending = new TotpState(state.Secret, state.CreatedAtUtc, state.VerifiedAtUtc, secret, DateTime.UtcNow);
+                var pending = new TotpState(
+                    state.Secret,
+                    state.CreatedAtUtc,
+                    state.VerifiedAtUtc,
+                    secret,
+                    DateTime.UtcNow,
+                    state.BackupCodes);
                 await userAuthRepository.SaveTotpStateAsync(auth.UserId, pending, true, req.FunctionContext.CancellationToken).ConfigureAwait(false);
             }
             else
@@ -439,7 +450,8 @@ public sealed class AuthFunctions
             state = null;
         }
 
-        if (state is null || string.IsNullOrWhiteSpace(state.Secret))
+        var hasBackupCodes = state?.BackupCodes is { Count: > 0 };
+        if (state is null || (string.IsNullOrWhiteSpace(state.Secret) && !hasBackupCodes))
         {
             return await req.ErrorAsync(HttpStatusCode.BadRequest, "MFA secret missing");
         }
@@ -448,6 +460,12 @@ public sealed class AuthFunctions
         {
             if (!mfaService.VerifyCode(state.PendingSecret, payload.Code))
             {
+                if (TryConsumeBackupCode(state, payload.Code, out var updated))
+                {
+                    await userAuthRepository.SaveTotpStateAsync(auth.UserId, updated, true, req.FunctionContext.CancellationToken).ConfigureAwait(false);
+                    return await req.ToJsonAsync(new { mfaEnabled = true }, HttpStatusCode.OK, jsonOptions);
+                }
+
                 return await req.ErrorAsync(HttpStatusCode.BadRequest, "Invalid code");
             }
 
@@ -456,19 +474,55 @@ public sealed class AuthFunctions
                 state.PendingCreatedAtUtc ?? DateTime.UtcNow,
                 DateTime.UtcNow,
                 null,
-                null);
+                null,
+                state.BackupCodes);
             await userAuthRepository.SaveTotpStateAsync(auth.UserId, promoted, true, req.FunctionContext.CancellationToken).ConfigureAwait(false);
             return await req.ToJsonAsync(new { mfaEnabled = true }, HttpStatusCode.OK, jsonOptions);
         }
 
-        if (!mfaService.VerifyCode(state.Secret, payload.Code))
+        if (string.IsNullOrWhiteSpace(state.Secret) || !mfaService.VerifyCode(state.Secret, payload.Code))
         {
+            if (TryConsumeBackupCode(state, payload.Code, out var updated))
+            {
+                await userAuthRepository.SaveTotpStateAsync(auth.UserId, updated, true, req.FunctionContext.CancellationToken).ConfigureAwait(false);
+                return await req.ToJsonAsync(new { mfaEnabled = true }, HttpStatusCode.OK, jsonOptions);
+            }
+
             return await req.ErrorAsync(HttpStatusCode.BadRequest, "Invalid code");
         }
 
-        var verified = new TotpState(state.Secret, state.CreatedAtUtc, DateTime.UtcNow, null, null);
+        var verified = new TotpState(state.Secret, state.CreatedAtUtc, DateTime.UtcNow, null, null, state.BackupCodes);
         await userAuthRepository.SaveTotpStateAsync(auth.UserId, verified, true, req.FunctionContext.CancellationToken).ConfigureAwait(false);
         return await req.ToJsonAsync(new { mfaEnabled = true }, HttpStatusCode.OK, jsonOptions);
+    }
+
+    [Function("Auth_Mfa_Backup")]
+    public async Task<HttpResponseData> BackupCodesAsync(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "auth/mfa/backup")] HttpRequestData req)
+    {
+        var (ok, auth, _) = await authFactory.BindAsync(req, req.FunctionContext.CancellationToken);
+        if (!ok || auth is null) return await req.ErrorAsync(HttpStatusCode.Unauthorized, "Auth required");
+        if (!auth.MfaEnabled) return await req.ErrorAsync(HttpStatusCode.Forbidden, "MFA required");
+
+        var authRecord = await userAuthRepository.GetAsync(auth.UserId, req.FunctionContext.CancellationToken).ConfigureAwait(false);
+        var state = TryReadTotpState(authRecord?.MfaMethodsJson);
+        if (state is null || string.IsNullOrWhiteSpace(state.Secret))
+        {
+            return await req.ErrorAsync(HttpStatusCode.BadRequest, "MFA not configured");
+        }
+
+        var codes = GenerateBackupCodes();
+        var hashedCodes = HashBackupCodes(codes);
+        var updated = new TotpState(
+            state.Secret,
+            state.CreatedAtUtc,
+            state.VerifiedAtUtc,
+            state.PendingSecret,
+            state.PendingCreatedAtUtc,
+            hashedCodes);
+        await userAuthRepository.SaveTotpStateAsync(auth.UserId, updated, true, req.FunctionContext.CancellationToken).ConfigureAwait(false);
+
+        return await req.ToJsonAsync(new { codes }, HttpStatusCode.OK, jsonOptions);
     }
 
     [Function("Auth_Link")]
@@ -541,6 +595,125 @@ public sealed class AuthFunctions
         }
 
         return await req.ToJsonAsync(new { status = "ok", userId = legacy.Id }, HttpStatusCode.OK, jsonOptions);
+    }
+
+    private static TotpState? TryReadTotpState(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<TotpState>(json);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static IReadOnlyList<string> GenerateBackupCodes()
+    {
+        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        var codes = new List<string>(BackupCodeCount);
+        for (var i = 0; i < BackupCodeCount; i++)
+        {
+            var chars = new char[BackupCodeLength];
+            for (var j = 0; j < BackupCodeLength; j++)
+            {
+                var index = RandomNumberGenerator.GetInt32(alphabet.Length);
+                chars[j] = alphabet[index];
+            }
+            var raw = new string(chars);
+            codes.Add(raw.Insert(BackupCodeGroupSize, "-"));
+        }
+        return codes;
+    }
+
+    private static List<BackupCode> HashBackupCodes(IEnumerable<string> codes)
+    {
+        var hashed = new List<BackupCode>();
+        foreach (var code in codes)
+        {
+            var normalized = NormalizeBackupCode(code);
+            if (normalized.Length == 0) continue;
+            hashed.Add(HashBackupCode(normalized));
+        }
+        return hashed;
+    }
+
+    private static BackupCode HashBackupCode(string normalized)
+    {
+        var salt = RandomNumberGenerator.GetBytes(16);
+        var codeBytes = Encoding.UTF8.GetBytes(normalized);
+        var data = new byte[salt.Length + codeBytes.Length];
+        Buffer.BlockCopy(salt, 0, data, 0, salt.Length);
+        Buffer.BlockCopy(codeBytes, 0, data, salt.Length, codeBytes.Length);
+        var hash = SHA256.HashData(data);
+        return new BackupCode(Convert.ToBase64String(salt), Convert.ToBase64String(hash));
+    }
+
+    private static bool TryConsumeBackupCode(TotpState state, string input, out TotpState updated)
+    {
+        updated = state;
+        var normalized = NormalizeBackupCode(input);
+        if (normalized.Length == 0 || state.BackupCodes is null || state.BackupCodes.Count == 0)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < state.BackupCodes.Count; i++)
+        {
+            var entry = state.BackupCodes[i];
+            if (TryMatchBackupCode(entry, normalized))
+            {
+                var remaining = state.BackupCodes.Where((_, idx) => idx != i).ToList();
+                updated = new TotpState(
+                    state.Secret,
+                    state.CreatedAtUtc,
+                    DateTime.UtcNow,
+                    state.PendingSecret,
+                    state.PendingCreatedAtUtc,
+                    remaining.Count == 0 ? null : remaining);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryMatchBackupCode(BackupCode entry, string normalized)
+    {
+        byte[] salt;
+        byte[] expectedHash;
+        try
+        {
+            salt = Convert.FromBase64String(entry.Salt);
+            expectedHash = Convert.FromBase64String(entry.Hash);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        var codeBytes = Encoding.UTF8.GetBytes(normalized);
+        var data = new byte[salt.Length + codeBytes.Length];
+        Buffer.BlockCopy(salt, 0, data, 0, salt.Length);
+        Buffer.BlockCopy(codeBytes, 0, data, salt.Length, codeBytes.Length);
+        var hash = SHA256.HashData(data);
+        return CryptographicOperations.FixedTimeEquals(hash, expectedHash);
+    }
+
+    private static string NormalizeBackupCode(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return string.Empty;
+        var builder = new StringBuilder(code.Length);
+        foreach (var ch in code)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                builder.Append(char.ToUpperInvariant(ch));
+            }
+        }
+        return builder.ToString();
     }
 }
 

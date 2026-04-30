@@ -109,6 +109,7 @@ export const AuthApi = {
   me: () => api<CurrentUser>('/auth/me'),
   startMfa: () => api<{ secret: string; otpauthUrl: string }>('/auth/mfa/start', 'POST'),
   verifyMfa: (code: string) => api<{ mfaEnabled: boolean }>('/auth/mfa/verify', 'POST', { code }),
+  backupCodes: () => api<{ codes: string[] }>('/auth/mfa/backup', 'POST'),
   linkLegacy: (legacyEmail: string, password: string, mfaCode: string) =>
     api<any>('/auth/link', 'POST', { legacyEmail, password, mfaCode }),
 };

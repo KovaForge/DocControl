@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { SettingsApi } from '../lib/api';
 import { useProject } from '../lib/projectContext';
-import LinkLegacyAccount from '../components/LinkLegacyAccount';
 
 type AiSettings = {
   provider: string;
@@ -22,7 +21,6 @@ export default function Settings() {
   const [clearGeminiKey, setClearGeminiKey] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const isDev = import.meta.env.DEV;
 
   useEffect(() => {
     const load = async () => {
@@ -153,15 +151,6 @@ export default function Settings() {
       {projectId && (
         <div style={{ marginTop: 12 }}>
           <button onClick={save}>Save</button>
-        </div>
-      )}
-      {!isDev && (
-        <div className="card" style={{ marginTop: 24 }}>
-          <h3>Link legacy account</h3>
-          <p className="muted">
-            If you used the old email/password login before, link it here to keep your projects and history.
-          </p>
-          <LinkLegacyAccount />
         </div>
       )}
     </div>
