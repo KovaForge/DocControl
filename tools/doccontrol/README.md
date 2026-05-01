@@ -20,6 +20,7 @@ export DOCCONTROL_TOKEN="<doccontrol bearer token>"
 ```
 
 `DOCCONTROL_TOKEN` is the bearer token returned by DocControl auth. The CLI never prints the token.
+Authenticated CLI requests send this token in `X-DocControl-Token` because Azure Static Web Apps can consume the standard `Authorization` header before forwarding requests to Functions. The API still validates the same signed DocControl token server-side.
 
 ## Commands
 
