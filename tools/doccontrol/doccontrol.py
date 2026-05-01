@@ -184,6 +184,113 @@ def output(data: Any) -> None:
     print(json.dumps(data, indent=2, sort_keys=True))
 
 
+def openclaw_manifest() -> dict[str, Any]:
+    return {
+        "schema": "https://openclaw.ai/schemas/tool-manifest/v1",
+        "name": "doccontrol",
+        "displayName": "DocControl CLI",
+        "description": "First-party DocControl automation CLI for OpenClaw agents to list, search, preview, and allocate controlled document file names.",
+        "invocation": "doccontrol",
+        "versionCommand": None,
+        "healthCommand": None,
+        "bootstrapCommand": "doccontrol login microsoft",
+        "principles": [
+            "Non-interactive commands by default except explicit login bootstrap",
+            "Stable exit codes: 0 on success, 1 on sanitized operational errors",
+            "Machine-readable JSON on stdout for automation paths",
+            "Microsoft tokens are never stored; only the minted DocControl bearer token may be saved locally",
+            "Secrets, config contents, and auth headers are never printed",
+            "Preview document names before mutating allocation/import operations",
+        ],
+        "commands": [
+            {
+                "command": "openclaw manifest",
+                "description": "Describe CLI capabilities for OpenClaw agents.",
+                "jsonOutput": True,
+                "mayUseNetworkOrMutate": False,
+            },
+            {
+                "command": "login microsoft [--no-store]",
+                "description": "Start Microsoft device-code login and exchange the verified identity for a DocControl bearer token.",
+                "jsonOutput": True,
+                "mayUseNetworkOrMutate": True,
+            },
+            {
+                "command": "logout",
+                "description": "Clear the stored DocControl bearer token from the local config file.",
+                "jsonOutput": True,
+                "mayUseNetworkOrMutate": True,
+            },
+            {
+                "command": "projects",
+                "description": "List accessible DocControl projects.",
+                "jsonOutput": True,
+                "mayUseNetworkOrMutate": True,
+            },
+            {
+                "command": "list-projects",
+                "description": "Alias for projects.",
+                "jsonOutput": True,
+                "mayUseNetworkOrMutate": True,
+            },
+            {
+                "command": "files --project <id-or-name> [--query <text>] [--take <n>] [--skip <n>]",
+                "description": "List document file names for a project.",
+                "jsonOutput": True,
+                "mayUseNetworkOrMutate": True,
+            },
+            {
+                "command": "list-files --project <id-or-name> [--query <text>] [--take <n>] [--skip <n>]",
+                "description": "Alias for files.",
+                "jsonOutput": True,
+                "mayUseNetworkOrMutate": True,
+            },
+            {
+                "command": "search --project <id-or-name> --query <text> [--take <n>] [--skip <n>]",
+                "description": "Search document file names and free text for a project.",
+                "jsonOutput": True,
+                "mayUseNetworkOrMutate": True,
+            },
+            {
+                "command": "search-files --project <id-or-name> --query <text> [--take <n>] [--skip <n>]",
+                "description": "Alias for search.",
+                "jsonOutput": True,
+                "mayUseNetworkOrMutate": True,
+            },
+            {
+                "command": "level-codes --project <id-or-name> [--level <1-6>]",
+                "description": "List standalone project level-code catalog entries.",
+                "jsonOutput": True,
+                "mayUseNetworkOrMutate": True,
+            },
+            {
+                "command": "get-level-code --project <id-or-name> --level <1-6> --code <code>",
+                "description": "Get one standalone project level-code catalog entry.",
+                "jsonOutput": True,
+                "mayUseNetworkOrMutate": True,
+            },
+            {
+                "command": "upsert-level-code --project <id-or-name> --level <1-6> --code <code> --description <text>",
+                "description": "Create or update a standalone project level-code catalog entry.",
+                "jsonOutput": True,
+                "mayUseNetworkOrMutate": True,
+            },
+            {
+                "command": "preview-name --project <id-or-name> --level1 <code> --level2 <code> --level3 <code> [--level4 <code>] [--level5 <code>] [--level6 <code>] [--free-text <text>] [--extension <ext>] [--original-query <text>]",
+                "description": "Preview the next controlled file name without saving a document record.",
+                "jsonOutput": True,
+                "mayUseNetworkOrMutate": True,
+            },
+            {
+                "command": "allocate-name --project <id-or-name> --level1 <code> --level2 <code> --level3 <code> [--level4 <code>] [--level5 <code>] [--level6 <code>] [--free-text <text>] [--extension <ext>] [--original-query <text>] [--force]",
+                "description": "Create and save a new controlled document name remotely after duplicate-risk preflight.",
+                "jsonOutput": True,
+                "mayUseNetworkOrMutate": True,
+            },
+        ],
+    }
+
+
 def normalize_items(response: Any) -> list[dict[str, Any]]:
     if isinstance(response, dict) and isinstance(response.get("items"), list):
         return response["items"]
@@ -332,6 +439,10 @@ def cmd_logout(_config: BaseConfig, _args: argparse.Namespace) -> None:
     output({"status": "ok", "cleared": had_token, "configPath": str(path)})
 
 
+def cmd_openclaw_manifest(_config: BaseConfig, _args: argparse.Namespace) -> None:
+    output(openclaw_manifest())
+
+
 def cmd_projects(config: Config, _args: argparse.Namespace) -> None:
     output({"projects": request_json(config, "GET", "/projects")})
 
@@ -446,6 +557,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     logout = sub.add_parser("logout", help="Clear the stored DocControl token.")
     logout.set_defaults(func=cmd_logout, auth_required=False)
+
+    openclaw = sub.add_parser("openclaw", help="OpenClaw agent integration helpers.")
+    openclaw_sub = openclaw.add_subparsers(dest="openclaw_command", required=True)
+    manifest = openclaw_sub.add_parser("manifest", help="Print an OpenClaw capability manifest as JSON.")
+    manifest.set_defaults(func=cmd_openclaw_manifest, auth_required=False)
 
     for name in ("projects", "list-projects"):
         p = sub.add_parser(name, help="List accessible projects.")

@@ -180,6 +180,12 @@ Deliver:
 
 Added a direct API helper at `bin/doccontrol` backed by `tools/doccontrol/doccontrol.py`.
 
+OpenClaw can discover the helper capabilities without credentials:
+
+```bash
+bin/doccontrol openclaw manifest
+```
+
 Confirmed API/auth model from repo source:
 
 - Auth uses `Authorization: Bearer <token>` for deployed password-auth sessions. Tokens are issued by `POST /api/auth/login` as `authToken` when `AuthTokenSecret` is configured. Static Web Apps auth can also bind via `x-ms-client-principal`; local legacy `x-user-id` headers are dev/legacy only and are not used by the CLI.

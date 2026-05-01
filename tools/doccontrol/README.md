@@ -25,6 +25,7 @@ Authenticated CLI requests send this token in `X-DocControl-Token` because Azure
 ## Commands
 
 ```bash
+bin/doccontrol openclaw manifest
 bin/doccontrol login microsoft
 bin/doccontrol projects
 bin/doccontrol files --project 1 --take 50
@@ -46,9 +47,13 @@ bin/doccontrol search-files --project 1 --query MIC-GAI
 
 Standalone level code commands manage project-level dictionaries such as Level 1 owners without creating a document or changing a numbering series. Existing `codes` APIs remain for full/hierarchical catalog combinations.
 
+## OpenClaw manifest
+
+`bin/doccontrol openclaw manifest` prints a machine-readable capability manifest for OpenClaw agents. It does not require auth, does not read stored token values, and emits JSON to stdout.
+
 ## Safety
 
-- JSON output is the default and only output format.
+- JSON output is the default and only output format for automation commands.
 - `preview-name` calls `/documents/preview` and reports `"mutated": false`.
 - `allocate-name` calls `/documents` and creates a saved remote document record.
 - Before allocation, the CLI searches existing documents for matching levels and free text. If matches exist, it returns `duplicate-risk` and does not create anything unless `--force` is supplied.
