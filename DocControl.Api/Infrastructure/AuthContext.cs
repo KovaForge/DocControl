@@ -53,14 +53,14 @@ public sealed class AuthContextFactory
             return (true, new AuthContext(user.Id, user.Email, user.DisplayName, true), null);
         }
 
-        if (TryGetBearer(req, out var token) && authTokenService.TryValidate(token, out var tokenUserId, out var tokenEmail))
+        if (TryGetBearer(req, out var token) && authTokenService.TryValidate(token, out var tokenUserId, out var tokenEmail, out var tokenMfaSatisfied))
         {
             var user = await userRepository.GetByIdAsync(tokenUserId, cancellationToken).ConfigureAwait(false);
             if (user is not null && string.Equals(user.Email, tokenEmail, StringComparison.OrdinalIgnoreCase))
             {
                 await userAuthRepository.EnsureExistsAsync(user.Id, cancellationToken).ConfigureAwait(false);
                 var auth = await userAuthRepository.GetAsync(user.Id, cancellationToken).ConfigureAwait(false);
-                var mfaEnabled = auth?.MfaEnabled ?? false;
+                var mfaEnabled = tokenMfaSatisfied || (auth?.MfaEnabled ?? false);
                 return (true, new AuthContext(user.Id, user.Email, user.DisplayName, mfaEnabled), null);
             }
 

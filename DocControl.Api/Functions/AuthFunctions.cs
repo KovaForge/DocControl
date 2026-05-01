@@ -96,8 +96,7 @@ public sealed class AuthFunctions
         var user = await userRepository.GetByEmailAsync(microsoftUser.Email, req.FunctionContext.CancellationToken).ConfigureAwait(false)
                    ?? await userRepository.RegisterAsync(microsoftUser.Email, microsoftUser.DisplayName, req.FunctionContext.CancellationToken).ConfigureAwait(false);
         await userAuthRepository.EnsureExistsAsync(user.Id, req.FunctionContext.CancellationToken).ConfigureAwait(false);
-        var auth = await userAuthRepository.GetAsync(user.Id, req.FunctionContext.CancellationToken).ConfigureAwait(false);
-        var authToken = authTokenService.IssueToken(user.Id, user.Email);
+        var authToken = authTokenService.IssueToken(user.Id, user.Email, mfaSatisfied: true);
         if (string.IsNullOrWhiteSpace(authToken))
         {
             return await req.ErrorAsync(HttpStatusCode.InternalServerError, "DocControl token issuing is not configured");
@@ -108,7 +107,7 @@ public sealed class AuthFunctions
             user.Id,
             user.Email,
             user.DisplayName,
-            MfaEnabled = auth?.MfaEnabled ?? false,
+            MfaEnabled = true,
             AuthToken = authToken,
             RequiresPasswordReset = false,
             Provider = "microsoft"

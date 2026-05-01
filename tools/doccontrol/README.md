@@ -10,7 +10,7 @@ Credentials stay outside the repo. Preferred setup is Microsoft device-code logi
 bin/doccontrol login microsoft
 ```
 
-The command opens a Microsoft device-code flow, exchanges the verified Microsoft identity for a DocControl bearer token, and stores only the DocControl token in `~/.config/doccontrol/config.json` with user-only file permissions. Microsoft tokens are not stored.
+The command opens a Microsoft device-code flow, exchanges the verified Microsoft identity for a DocControl bearer token that satisfies DocControl's MFA gate, and stores only the DocControl token in `~/.config/doccontrol/config.json` with user-only file permissions. Microsoft tokens are not stored.
 
 Environment overrides still work:
 

@@ -6,7 +6,7 @@ namespace DocControl.Api.Infrastructure;
 
 public sealed class AuthTokenService
 {
-    private const int TokenVersion = 1;
+    private const int CurrentTokenVersion = 2;
     private static readonly TimeSpan DefaultTokenLifetime = TimeSpan.FromDays(30);
     private readonly byte[]? key;
     private readonly TimeSpan tokenLifetime;
@@ -25,11 +25,11 @@ public sealed class AuthTokenService
             : DefaultTokenLifetime;
     }
 
-    public string? IssueToken(long userId, string email)
+    public string? IssueToken(long userId, string email, bool mfaSatisfied = false)
     {
         if (key is null) return null;
         var issuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var payload = $"{TokenVersion}|{userId}|{email}|{issuedAt}";
+        var payload = $"{CurrentTokenVersion}|{userId}|{email}|{issuedAt}|{(mfaSatisfied ? "1" : "0")}";
         var payloadBytes = Encoding.UTF8.GetBytes(payload);
         var signature = ComputeSignature(payloadBytes);
         return $"{Base64UrlEncode(payloadBytes)}.{Base64UrlEncode(signature)}";
@@ -37,8 +37,14 @@ public sealed class AuthTokenService
 
     public bool TryValidate(string token, out long userId, out string email)
     {
+        return TryValidate(token, out userId, out email, out _);
+    }
+
+    public bool TryValidate(string token, out long userId, out string email, out bool mfaSatisfied)
+    {
         userId = 0;
         email = string.Empty;
+        mfaSatisfied = false;
         if (key is null) return false;
 
         var parts = token.Split('.', StringSplitOptions.RemoveEmptyEntries);
@@ -64,14 +70,20 @@ public sealed class AuthTokenService
 
         var payload = Encoding.UTF8.GetString(payloadBytes);
         var fields = payload.Split('|', StringSplitOptions.None);
-        if (fields.Length != 4) return false;
-        if (!int.TryParse(fields[0], out var version) || version != TokenVersion) return false;
+        if (fields.Length is not (4 or 5)) return false;
+        if (!int.TryParse(fields[0], out var version) || version is not (1 or CurrentTokenVersion)) return false;
+        if (version == 1 && fields.Length != 4) return false;
+        if (version == CurrentTokenVersion && fields.Length != 5) return false;
         if (!long.TryParse(fields[1], out var parsedUserId) || parsedUserId <= 0) return false;
 
         email = fields[2];
         if (string.IsNullOrWhiteSpace(email)) return false;
 
         if (!long.TryParse(fields[3], out var issuedSeconds)) return false;
+        if (version == CurrentTokenVersion)
+        {
+            mfaSatisfied = fields[4] == "1";
+        }
         var issuedAt = DateTimeOffset.FromUnixTimeSeconds(issuedSeconds);
         if (DateTimeOffset.UtcNow - issuedAt > tokenLifetime) return false;
 
