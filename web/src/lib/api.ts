@@ -114,6 +114,17 @@ export const AuthApi = {
     api<any>('/auth/link', 'POST', { legacyEmail, password, mfaCode }),
 };
 
+export const LevelCodesApi = {
+  list: (projectId: number, level?: number) => {
+    const suffix = level ? `?level=${level}` : '';
+    return api<any[]>(`/projects/${projectId}/level-codes${suffix}`);
+  },
+  get: (projectId: number, level: number, code: string) =>
+    api<any>(`/projects/${projectId}/level-codes/${level}/${encodeURIComponent(code)}`),
+  upsert: (projectId: number, payload: { level: number; code: string; description?: string | null }) =>
+    api<any>(`/projects/${projectId}/level-codes`, 'POST', payload),
+};
+
 export const CodesApi = {
   list: (projectId: number) => api<any[]>(`/projects/${projectId}/codes`),
   listSeries: (projectId: number) => api<any[]>(`/projects/${projectId}/series`),

@@ -29,6 +29,9 @@ bin/doccontrol login microsoft
 bin/doccontrol projects
 bin/doccontrol files --project 1 --take 50
 bin/doccontrol search --project 1 --query MIC-GAI
+bin/doccontrol level-codes --project 1 --level 1
+bin/doccontrol upsert-level-code --project 1 --level 1 --code SHX --description "ShareX Team"
+bin/doccontrol get-level-code --project 1 --level 1 --code SHX
 bin/doccontrol preview-name --project 1 --level1 MIC --level2 GAI --level3 DOC --free-text "Example" --extension pdf
 bin/doccontrol allocate-name --project 1 --level1 MIC --level2 GAI --level3 DOC --free-text "Example" --extension pdf
 ```
@@ -40,6 +43,8 @@ bin/doccontrol list-projects
 bin/doccontrol list-files --project 1
 bin/doccontrol search-files --project 1 --query MIC-GAI
 ```
+
+Standalone level code commands manage project-level dictionaries such as Level 1 owners without creating a document or changing a numbering series. Existing `codes` APIs remain for full/hierarchical catalog combinations.
 
 ## Safety
 

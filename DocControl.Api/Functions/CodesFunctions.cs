@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using System.Linq;
+using System.Web;
 using DocControl.Api.Infrastructure;
 using DocControl.Core.Models;
 using DocControl.Infrastructure.Data;
@@ -18,6 +19,7 @@ public sealed class CodesFunctions
     private readonly DocumentRepository documentRepository;
     private readonly CodeSeriesRepository codeSeriesRepository;
     private readonly CodeCatalogRepository codeCatalogRepository;
+    private readonly LevelCodeRepository levelCodeRepository;
     private readonly JsonSerializerOptions jsonOptions;
     private readonly ILogger<CodesFunctions> logger;
 
@@ -27,6 +29,7 @@ public sealed class CodesFunctions
         DocumentRepository documentRepository,
         CodeSeriesRepository codeSeriesRepository,
         CodeCatalogRepository codeCatalogRepository,
+        LevelCodeRepository levelCodeRepository,
         IOptions<JsonSerializerOptions> jsonOptions,
         ILogger<CodesFunctions> logger)
     {
@@ -35,8 +38,82 @@ public sealed class CodesFunctions
         this.documentRepository = documentRepository;
         this.codeSeriesRepository = codeSeriesRepository;
         this.codeCatalogRepository = codeCatalogRepository;
+        this.levelCodeRepository = levelCodeRepository;
         this.jsonOptions = jsonOptions.Value;
         this.logger = logger;
+    }
+
+    [Function("LevelCodes_List")]
+    public async Task<HttpResponseData> ListLevelCodesAsync(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "projects/{projectId:long}/level-codes")] HttpRequestData req,
+        long projectId)
+    {
+        var (ok, auth, _) = await authFactory.BindAsync(req, req.FunctionContext.CancellationToken);
+        if (!ok || auth is null) return await req.ErrorAsync(HttpStatusCode.Unauthorized, "Auth required");
+        if (!auth.MfaEnabled) return await req.ErrorAsync(HttpStatusCode.Forbidden, "MFA required");
+        if (!await IsAtLeast(projectId, auth.UserId, Roles.Viewer, req.FunctionContext.CancellationToken)) return await req.ErrorAsync(HttpStatusCode.Forbidden, "Access denied");
+
+        var query = HttpUtility.ParseQueryString(req.Url.Query);
+        int? level = null;
+        if (!string.IsNullOrWhiteSpace(query["level"]))
+        {
+            if (!int.TryParse(query["level"], out var parsed) || parsed < 1 || parsed > 6)
+            {
+                return await req.ErrorAsync(HttpStatusCode.BadRequest, "Level must be between 1 and 6");
+            }
+            level = parsed;
+        }
+
+        var codes = await levelCodeRepository.ListAsync(projectId, level, req.FunctionContext.CancellationToken);
+        return await req.ToJsonAsync(codes, HttpStatusCode.OK, jsonOptions);
+    }
+
+    [Function("LevelCodes_Get")]
+    public async Task<HttpResponseData> GetLevelCodeAsync(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "projects/{projectId:long}/level-codes/{level:int}/{code}")] HttpRequestData req,
+        long projectId,
+        int level,
+        string code)
+    {
+        var (ok, auth, _) = await authFactory.BindAsync(req, req.FunctionContext.CancellationToken);
+        if (!ok || auth is null) return await req.ErrorAsync(HttpStatusCode.Unauthorized, "Auth required");
+        if (!auth.MfaEnabled) return await req.ErrorAsync(HttpStatusCode.Forbidden, "MFA required");
+        if (!await IsAtLeast(projectId, auth.UserId, Roles.Viewer, req.FunctionContext.CancellationToken)) return await req.ErrorAsync(HttpStatusCode.Forbidden, "Access denied");
+        if (level < 1 || level > 6) return await req.ErrorAsync(HttpStatusCode.BadRequest, "Level must be between 1 and 6");
+        if (string.IsNullOrWhiteSpace(code)) return await req.ErrorAsync(HttpStatusCode.BadRequest, "Code required");
+
+        var record = await levelCodeRepository.GetAsync(projectId, level, code, req.FunctionContext.CancellationToken);
+        if (record is null) return await req.ErrorAsync(HttpStatusCode.NotFound, "Level code not found");
+        return await req.ToJsonAsync(record, HttpStatusCode.OK, jsonOptions);
+    }
+
+    [Function("LevelCodes_Upsert")]
+    public async Task<HttpResponseData> UpsertLevelCodeAsync(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "projects/{projectId:long}/level-codes")] HttpRequestData req,
+        long projectId)
+    {
+        var (ok, auth, _) = await authFactory.BindAsync(req, req.FunctionContext.CancellationToken);
+        if (!ok || auth is null) return await req.ErrorAsync(HttpStatusCode.Unauthorized, "Auth required");
+        if (!auth.MfaEnabled) return await req.ErrorAsync(HttpStatusCode.Forbidden, "MFA required");
+        if (!await IsAtLeast(projectId, auth.UserId, Roles.Contributor, req.FunctionContext.CancellationToken)) return await req.ErrorAsync(HttpStatusCode.Forbidden, "Contributor role required");
+
+        UpsertLevelCodeRequest? payload;
+        try
+        {
+            payload = await JsonSerializer.DeserializeAsync<UpsertLevelCodeRequest>(req.Body, jsonOptions, req.FunctionContext.CancellationToken);
+        }
+        catch (JsonException ex)
+        {
+            logger.LogWarning(ex, "Invalid level code payload");
+            return await req.ErrorAsync(HttpStatusCode.BadRequest, "Invalid JSON payload");
+        }
+
+        if (payload is null) return await req.ErrorAsync(HttpStatusCode.BadRequest, "Payload required");
+        if (payload.Level < 1 || payload.Level > 6) return await req.ErrorAsync(HttpStatusCode.BadRequest, "Level must be between 1 and 6");
+        if (string.IsNullOrWhiteSpace(payload.Code)) return await req.ErrorAsync(HttpStatusCode.BadRequest, "Code required");
+
+        var record = await levelCodeRepository.UpsertAsync(projectId, payload.Level, payload.Code, payload.Description, req.FunctionContext.CancellationToken);
+        return await req.ToJsonAsync(record, HttpStatusCode.OK, jsonOptions);
     }
 
     [Function("Codes_List")]
@@ -246,3 +323,5 @@ public sealed class CodesFunctions
 }
 
 public sealed record UpsertCodeRequest(string Level1, string Level2, string Level3, string? Level4, string? Level5, string? Level6, string? Description, int? NextNumber);
+
+public sealed record UpsertLevelCodeRequest(int Level, string Code, string? Description);

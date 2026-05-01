@@ -348,6 +348,25 @@ def cmd_search(config: Config, args: argparse.Namespace) -> None:
     output({"project": project or {"id": int(project_id)}, "query": args.query, "documents": response})
 
 
+def cmd_level_codes(config: Config, args: argparse.Namespace) -> None:
+    project_id, project = resolve_project(config, args.project)
+    response = request_json(config, "GET", f"/projects/{project_id}/level-codes", query={"level": args.level})
+    output({"project": project or {"id": int(project_id)}, "levelCodes": response})
+
+
+def cmd_get_level_code(config: Config, args: argparse.Namespace) -> None:
+    project_id, project = resolve_project(config, args.project)
+    response = request_json(config, "GET", f"/projects/{project_id}/level-codes/{args.level}/{urllib.parse.quote(args.code)}")
+    output({"project": project or {"id": int(project_id)}, "levelCode": response})
+
+
+def cmd_upsert_level_code(config: Config, args: argparse.Namespace) -> None:
+    project_id, project = resolve_project(config, args.project)
+    payload = {"level": args.level, "code": args.code, "description": args.description}
+    response = request_json(config, "POST", f"/projects/{project_id}/level-codes", payload=payload)
+    output({"status": "ok", "project": project or {"id": int(project_id)}, "levelCode": response})
+
+
 def cmd_preview(config: Config, args: argparse.Namespace) -> None:
     project_id, project = resolve_project(config, args.project)
     payload = document_payload(args)
@@ -395,6 +414,12 @@ def add_paging(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--skip", type=int, default=0)
 
 
+def add_level_code_fields(parser: argparse.ArgumentParser) -> None:
+    add_project(parser)
+    parser.add_argument("--level", type=int, required=True, choices=range(1, 7), metavar="1-6")
+    parser.add_argument("--code", required=True)
+
+
 def add_doc_fields(parser: argparse.ArgumentParser) -> None:
     add_project(parser)
     parser.add_argument("--level1", required=True)
@@ -439,6 +464,20 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--query", required=True)
         add_paging(p)
         p.set_defaults(func=cmd_search, auth_required=True)
+
+    p = sub.add_parser("level-codes", help="List standalone project level codes.")
+    add_project(p)
+    p.add_argument("--level", type=int, choices=range(1, 7), metavar="1-6", help="Optional level filter.")
+    p.set_defaults(func=cmd_level_codes, auth_required=True)
+
+    p = sub.add_parser("get-level-code", help="Get a standalone project level code.")
+    add_level_code_fields(p)
+    p.set_defaults(func=cmd_get_level_code, auth_required=True)
+
+    p = sub.add_parser("upsert-level-code", help="Create or update a standalone project level code.")
+    add_level_code_fields(p)
+    p.add_argument("--description", required=True)
+    p.set_defaults(func=cmd_upsert_level_code, auth_required=True)
 
     p = sub.add_parser("preview-name", help="Preview next file name without saving.")
     add_doc_fields(p)

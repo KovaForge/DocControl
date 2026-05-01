@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AiApi, CodesApi, DocumentsApi, ProjectsApi } from '../lib/api';
+import { AiApi, CodesApi, DocumentsApi, LevelCodesApi, ProjectsApi } from '../lib/api';
 import { useProject } from '../lib/projectContext';
 
 export default function Generate() {
@@ -20,6 +20,7 @@ export default function Generate() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [levelCount, setLevelCount] = useState(3);
   const [catalog, setCatalog] = useState<any[]>([]);
+  const [levelCodes, setLevelCodes] = useState<any[]>([]);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [missingDescriptions, setMissingDescriptions] = useState<Record<string, string>>({});
   const { projectId } = useProject();
@@ -29,22 +30,26 @@ export default function Generate() {
       if (!projectId) {
         setLevelCount(3);
         setCatalog([]);
+        setLevelCodes([]);
         setCatalogLoaded(false);
         return;
       }
       setCatalogLoaded(false);
       try {
-        const [project, codes] = await Promise.all([
+        const [project, codes, standaloneCodes] = await Promise.all([
           ProjectsApi.get(projectId),
           CodesApi.list(projectId),
+          LevelCodesApi.list(projectId),
         ]);
         const count = typeof project?.levelCount === 'number' ? project.levelCount : 3;
         setLevelCount(Math.min(Math.max(count, 1), 6));
         setCatalog(Array.isArray(codes) ? codes : []);
+        setLevelCodes(Array.isArray(standaloneCodes) ? standaloneCodes : []);
         setCatalogLoaded(true);
       } catch {
         setLevelCount(3);
         setCatalog([]);
+        setLevelCodes([]);
         setCatalogLoaded(false);
       }
     };
@@ -53,6 +58,13 @@ export default function Generate() {
 
   const catalogCodesByLevel = useMemo(() => {
     const map = new Map<number, Set<string>>();
+    for (const entry of levelCodes) {
+      const level = Number(entry?.level);
+      const normalized = String(entry?.code ?? '').trim().toLowerCase();
+      if (level < 1 || level > 6 || !normalized) continue;
+      if (!map.has(level)) map.set(level, new Set());
+      map.get(level)!.add(normalized);
+    }
     for (const entry of catalog) {
       const key = entry?.key ?? {};
       const l1 = key.level1 ?? '';
@@ -75,7 +87,7 @@ export default function Generate() {
       map.get(level)!.add(normalized);
     }
     return map;
-  }, [catalog]);
+  }, [catalog, levelCodes]);
 
   const isCatalogMissing = (level: number) => {
     const l1 = level1.trim();
@@ -177,11 +189,23 @@ export default function Generate() {
             missingDescriptions[key] ?? ''
           );
         });
+        for (const item of missingLevels) {
+          const key = getMissingKey(item.level);
+          await LevelCodesApi.upsert(projectId, {
+            level: item.level,
+            code: item.code,
+            description: missingDescriptions[key] ?? '',
+          });
+        }
         for (const entry of catalogEntries) {
           await CodesApi.upsert(projectId, entry);
         }
-        const refreshed = await CodesApi.list(projectId);
+        const [refreshed, refreshedLevelCodes] = await Promise.all([
+          CodesApi.list(projectId),
+          LevelCodesApi.list(projectId),
+        ]);
         setCatalog(Array.isArray(refreshed) ? refreshed : []);
+        setLevelCodes(Array.isArray(refreshedLevelCodes) ? refreshedLevelCodes : []);
       }
       const res = await DocumentsApi.create(projectId, {
         level1,

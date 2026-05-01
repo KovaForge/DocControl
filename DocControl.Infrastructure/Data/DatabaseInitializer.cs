@@ -225,6 +225,29 @@ public sealed class DatabaseInitializer
             UNIQUE(ProjectId, Level1, Level2, Level3, Level4, Level5, Level6)
         );
 
+        CREATE TABLE IF NOT EXISTS LevelCodes (
+            Id BIGSERIAL PRIMARY KEY,
+            ProjectId BIGINT NOT NULL REFERENCES Projects(Id) ON DELETE CASCADE,
+            Level INTEGER NOT NULL CHECK (Level >= 1 AND Level <= 6),
+            Code TEXT NOT NULL,
+            Description TEXT,
+            CreatedAtUtc TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UpdatedAtUtc TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE(ProjectId, Level, Code)
+        );
+
+        INSERT INTO LevelCodes (ProjectId, Level, Code, Description)
+        SELECT DISTINCT ProjectId, Level, Code, Description
+        FROM (
+            SELECT ProjectId, 1 AS Level, Level1 AS Code, Description FROM CodeCatalog WHERE Level1 <> ''
+            UNION ALL SELECT ProjectId, 2, Level2, Description FROM CodeCatalog WHERE Level2 <> ''
+            UNION ALL SELECT ProjectId, 3, Level3, Description FROM CodeCatalog WHERE Level3 <> ''
+            UNION ALL SELECT ProjectId, 4, Level4, Description FROM CodeCatalog WHERE Level4 <> ''
+            UNION ALL SELECT ProjectId, 5, Level5, Description FROM CodeCatalog WHERE Level5 <> ''
+            UNION ALL SELECT ProjectId, 6, Level6, Description FROM CodeCatalog WHERE Level6 <> ''
+        ) source
+        ON CONFLICT(ProjectId, Level, Code) DO NOTHING;
+
         CREATE TABLE IF NOT EXISTS Documents (
             Id BIGSERIAL PRIMARY KEY,
             ProjectId BIGINT NOT NULL REFERENCES Projects(Id) ON DELETE CASCADE,
@@ -257,6 +280,7 @@ public sealed class DatabaseInitializer
         CREATE INDEX IF NOT EXISTS IX_Documents_ProjectId ON Documents(ProjectId);
         CREATE INDEX IF NOT EXISTS IX_Documents_Search ON Documents(ProjectId, Level1, Level2, Level3, Level4, Level5, Level6, Number);
         CREATE INDEX IF NOT EXISTS IX_Audit_ProjectId ON Audit(ProjectId, CreatedAtUtc DESC);
+        CREATE INDEX IF NOT EXISTS IX_LevelCodes_ProjectLevel ON LevelCodes(ProjectId, Level, Code);
         ";
 
         await using var cmd = new NpgsqlCommand(sql, conn);
