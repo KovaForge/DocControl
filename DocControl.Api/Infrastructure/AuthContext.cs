@@ -102,6 +102,15 @@ public sealed class AuthContextFactory
     private static bool TryGetBearer(HttpRequestData req, out string token)
     {
         token = string.Empty;
+        if (req.Headers.TryGetValues("X-DocControl-Token", out var docControlValues))
+        {
+            token = docControlValues.FirstOrDefault()?.Trim() ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                return true;
+            }
+        }
+
         if (!req.Headers.TryGetValues("Authorization", out var values))
         {
             return false;

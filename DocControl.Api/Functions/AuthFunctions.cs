@@ -628,9 +628,9 @@ public sealed class AuthFunctions
         return codes;
     }
 
-    private static List<BackupCode> HashBackupCodes(IEnumerable<string> codes)
+    private static List<DocControl.Infrastructure.Data.BackupCode> HashBackupCodes(IEnumerable<string> codes)
     {
-        var hashed = new List<BackupCode>();
+        var hashed = new List<DocControl.Infrastructure.Data.BackupCode>();
         foreach (var code in codes)
         {
             var normalized = NormalizeBackupCode(code);
@@ -640,7 +640,7 @@ public sealed class AuthFunctions
         return hashed;
     }
 
-    private static BackupCode HashBackupCode(string normalized)
+    private static DocControl.Infrastructure.Data.BackupCode HashBackupCode(string normalized)
     {
         var salt = RandomNumberGenerator.GetBytes(16);
         var codeBytes = Encoding.UTF8.GetBytes(normalized);
@@ -648,7 +648,7 @@ public sealed class AuthFunctions
         Buffer.BlockCopy(salt, 0, data, 0, salt.Length);
         Buffer.BlockCopy(codeBytes, 0, data, salt.Length, codeBytes.Length);
         var hash = SHA256.HashData(data);
-        return new BackupCode(Convert.ToBase64String(salt), Convert.ToBase64String(hash));
+        return new DocControl.Infrastructure.Data.BackupCode(Convert.ToBase64String(salt), Convert.ToBase64String(hash));
     }
 
     private static bool TryConsumeBackupCode(TotpState state, string input, out TotpState updated)
@@ -680,7 +680,7 @@ public sealed class AuthFunctions
         return false;
     }
 
-    private static bool TryMatchBackupCode(BackupCode entry, string normalized)
+    private static bool TryMatchBackupCode(DocControl.Infrastructure.Data.BackupCode entry, string normalized)
     {
         byte[] salt;
         byte[] expectedHash;

@@ -107,7 +107,7 @@ def request_json(config: Config, method: str, path: str, payload: dict[str, Any]
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {config.token}",
+        "X-DocControl-Token": config.token,
         "User-Agent": "OpenClaw-DocControl/1.0",
     }
     return request_json_url(api_url(config.base_url, path, query), method, config.timeout, payload, headers)
