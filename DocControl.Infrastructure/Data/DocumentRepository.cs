@@ -247,6 +247,17 @@ public sealed class DocumentRepository
         return null;
     }
 
+    public async Task<int> DeleteAsync(long projectId, long documentId, CancellationToken cancellationToken = default)
+    {
+        await using var conn = factory.Create();
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        const string sql = @"DELETE FROM Documents WHERE ProjectId = @ProjectId AND Id = @Id;";
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@ProjectId", projectId);
+        cmd.Parameters.AddWithValue("@Id", documentId);
+        return await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task ClearAllAsync(long projectId, CancellationToken cancellationToken = default)
     {
         await using var conn = factory.Create();

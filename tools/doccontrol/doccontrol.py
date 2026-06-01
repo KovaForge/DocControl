@@ -488,6 +488,18 @@ def cmd_preview(config: Config, args: argparse.Namespace) -> None:
 def cmd_allocate(config: Config, args: argparse.Namespace) -> None:
     project_id, project = resolve_project(config, args.project)
     payload = document_payload(args)
+
+    # Cleanup pass: delete matching docs before allocating fresh ones
+    if args.delete:
+        if not args.force:
+            output({"error": "--delete requires --force", "status": "bad-args"})
+            return
+        duplicates = docs_for_duplicate_check(config, project_id, payload)
+        if duplicates:
+            for d in duplicates:
+                request_json(config, "DELETE", f"/projects/{project_id}/documents/{d['id']}")
+            output({"deleted": len(duplicates), "deletedIds": [d["id"] for d in duplicates]})
+
     duplicates = docs_for_duplicate_check(config, project_id, payload)
     if duplicates and not args.force:
         output({
@@ -509,6 +521,23 @@ def cmd_allocate(config: Config, args: argparse.Namespace) -> None:
         return
     created = request_json(config, "POST", f"/projects/{project_id}/documents", payload=payload)
     output({"status": "created", "project": project or {"id": int(project_id)}, "document": created, "created": True})
+
+
+def cmd_delete_documents(config: Config, args: argparse.Namespace) -> None:
+    project_id, _project = resolve_project(config, args.project)
+    deleted = []
+    failed = []
+    for sid in args.ids.split(","):
+        sid = sid.strip()
+        if not sid.isdigit():
+            failed.append({"id": sid, "error": "not a valid integer"})
+            continue
+        try:
+            request_json(config, "DELETE", f"/projects/{project_id}/documents/{sid}")
+            deleted.append(int(sid))
+        except Exception as e:
+            failed.append({"id": sid, "error": str(e)})
+    output({"deleted": deleted, "failed": failed})
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -602,7 +631,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("allocate-name", help="Create/save a new document name remotely.")
     add_doc_fields(p)
     p.add_argument("--force", action="store_true", help="Allow allocation when matching fields already exist.")
+    p.add_argument("--delete", action="store_true", help="Delete matching documents before allocating (cleanup pass). Requires --force.")
     p.set_defaults(func=cmd_allocate, auth_required=True)
+
+    p = sub.add_parser("delete-documents", help="Delete documents by ID(s).")
+    add_project(p)
+    p.add_argument("--ids", required=True, help="Comma-separated document IDs to delete.")
+    p.set_defaults(func=cmd_delete_documents, auth_required=True)
     return parser
 
 
