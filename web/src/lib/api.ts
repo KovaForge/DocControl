@@ -4,6 +4,14 @@ export type RegisteredUser = { id: number; email: string; displayName: string; c
 export type CurrentUser = { userId: number; email: string; displayName: string; mfaEnabled: boolean; hasPassword?: boolean };
 export type LoginUser = { id: number; email: string; displayName: string; mfaEnabled: boolean; requiresPasswordReset?: boolean; authToken?: string };
 export type ProfileUpdate = { displayName: string };
+export type AgentToken = {
+  id: number;
+  name: string;
+  prefix: string;
+  createdAtUtc: string;
+  lastUsedAtUtc?: string | null;
+  expiresAtUtc?: string | null;
+};
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '/api';
 
@@ -233,6 +241,8 @@ export const DocumentsApi = {
     entries: { code: string; fileName?: string; freeText?: string; description?: string }[],
   ) => api<any>(`/projects/${projectId}/documents/import`, 'POST', { entries }),
   exportJson: (projectId: number) => api<any[]>(`/projects/${projectId}/documents/export`),
+  delete: (projectId: number, documentId: number) =>
+    api<{ deleted: boolean; documentId: number }>(`/projects/${projectId}/documents/${documentId}`, 'DELETE'),
   purge: (projectId: number) => api<{ deleted: number }>(`/projects/${projectId}/documents`, 'DELETE'),
 };
 
@@ -243,6 +253,12 @@ export const AuditApi = {
 export const SettingsApi = {
   get: (projectId: number) => api<any>(`/projects/${projectId}/settings`),
   save: (projectId: number, payload: any) => api<any>(`/projects/${projectId}/settings`, 'POST', payload),
+  listAgentTokens: (projectId: number) =>
+    api<{ items: AgentToken[] }>(`/projects/${projectId}/agent-tokens`),
+  createAgentToken: (projectId: number, payload: { name?: string; expiresAtUtc?: string | null }) =>
+    api<{ token: string; item: AgentToken }>(`/projects/${projectId}/agent-tokens`, 'POST', payload),
+  revokeAgentToken: (projectId: number, tokenId: number) =>
+    api<{ revoked: boolean; tokenId: number }>(`/projects/${projectId}/agent-tokens/${tokenId}`, 'DELETE'),
 };
 
 export const AiApi = {

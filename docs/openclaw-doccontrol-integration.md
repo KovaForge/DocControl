@@ -188,7 +188,8 @@ bin/doccontrol openclaw manifest
 
 Confirmed API/auth model from repo source:
 
-- Auth uses `Authorization: Bearer <token>` for deployed password-auth sessions. Tokens are issued by `POST /api/auth/login` as `authToken` when `AuthTokenSecret` is configured. Static Web Apps auth can also bind via `x-ms-client-principal`; local legacy `x-user-id` headers are dev/legacy only and are not used by the CLI.
+- Auth uses per-user agent tokens created under Settings for OpenClaw/Hermes automation. Password-auth sessions can also use `Authorization: Bearer <token>` issued by `POST /api/auth/login` as `authToken` when `AuthTokenSecret` is configured. Static Web Apps auth can also bind via `x-ms-client-principal`; local legacy `x-user-id` headers are dev/legacy only and are not used by the CLI.
+- Agent tokens are shown once, stored server-side as hashes, and may be sent with `Authorization: Bearer <DOCCONTROL_TOKEN>`, `X-DocControl-Token`, or `x-api-key`.
 - Project discovery: `GET /api/projects`.
 - Document listing/search: `GET /api/projects/{projectId}/documents?q=<text>&take=<n>&skip=<n>`.
 - Safe preview: `POST /api/projects/{projectId}/documents/preview`.

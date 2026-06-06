@@ -90,6 +90,18 @@ public sealed class DatabaseInitializer
             UNIQUE(ProjectId, InvitedEmail, Role)
         );
 
+        CREATE TABLE IF NOT EXISTS AgentTokens (
+            Id BIGSERIAL PRIMARY KEY,
+            UserId BIGINT NOT NULL REFERENCES Users(Id) ON DELETE CASCADE,
+            Name TEXT NOT NULL,
+            TokenHash TEXT NOT NULL UNIQUE,
+            Prefix TEXT NOT NULL,
+            CreatedAtUtc TIMESTAMPTZ NOT NULL DEFAULT now(),
+            LastUsedAtUtc TIMESTAMPTZ,
+            ExpiresAtUtc TIMESTAMPTZ,
+            RevokedAtUtc TIMESTAMPTZ
+        );
+
         -- Plaintext token column retained for legacy compatibility. New invites only store hashes.
         ALTER TABLE ProjectInvites ADD COLUMN IF NOT EXISTS InviteToken TEXT;
         ALTER TABLE Users ADD COLUMN IF NOT EXISTS OpenAiKeyEncrypted TEXT;
@@ -281,6 +293,7 @@ public sealed class DatabaseInitializer
         CREATE INDEX IF NOT EXISTS IX_Documents_Search ON Documents(ProjectId, Level1, Level2, Level3, Level4, Level5, Level6, Number);
         CREATE INDEX IF NOT EXISTS IX_Audit_ProjectId ON Audit(ProjectId, CreatedAtUtc DESC);
         CREATE INDEX IF NOT EXISTS IX_LevelCodes_ProjectLevel ON LevelCodes(ProjectId, Level, Code);
+        CREATE INDEX IF NOT EXISTS IX_AgentTokens_UserId ON AgentTokens(UserId, CreatedAtUtc DESC);
         ";
 
         await using var cmd = new NpgsqlCommand(sql, conn);

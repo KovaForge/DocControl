@@ -1,8 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CodesApi, DocumentsApi } from '../lib/api';
 import { useProject } from '../lib/projectContext';
 
 type FilePickOptions = { accept: string };
+
+type DocumentRow = {
+  id: number;
+  fileName: string;
+  freeText?: string | null;
+  createdAtUtc: string;
+};
 
 async function pickFileText(opts: FilePickOptions): Promise<string | null> {
   return new Promise((resolve) => {
@@ -81,17 +88,59 @@ function downloadFile(contents: string, filename: string, mime = 'text/plain') {
   URL.revokeObjectURL(url);
 }
 
+function errorMessage(err: unknown, fallback: string) {
+  return err instanceof Error ? err.message : fallback;
+}
+
 export default function Management() {
   const { projectId } = useProject();
   const [loading, setLoading] = useState(false);
   const [currentAction, setCurrentAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cleanupQuery, setCleanupQuery] = useState('');
+  const [cleanupDocs, setCleanupDocs] = useState<DocumentRow[]>([]);
+  const [cleanupTotal, setCleanupTotal] = useState(0);
+  const [selectedDocIds, setSelectedDocIds] = useState<Set<number>>(new Set());
 
   const resetStatus = () => {
     setMessage(null);
     setError(null);
   };
+
+  const loadCleanupDocuments = async (query = cleanupQuery) => {
+    if (!projectId) return;
+    setLoading(true);
+    setCurrentAction('loadCleanupDocuments');
+    resetStatus();
+    try {
+      const data = await DocumentsApi.list(projectId, { q: query, take: 100, skip: 0 });
+      const items = Array.isArray(data)
+        ? data
+        : Array.isArray(data.items)
+          ? data.items
+          : [];
+      setCleanupDocs(items);
+      setCleanupTotal(Array.isArray(data) ? data.length : typeof data.total === 'number' ? data.total : items.length);
+      setSelectedDocIds(new Set());
+    } catch (err: unknown) {
+      setError(errorMessage(err, 'Failed to load documents'));
+    } finally {
+      setLoading(false);
+      setCurrentAction(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!projectId) {
+      setCleanupDocs([]);
+      setCleanupTotal(0);
+      setSelectedDocIds(new Set());
+      return;
+    }
+    loadCleanupDocuments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   const importCodesCsv = async () => {
     if (!projectId) return;
@@ -328,6 +377,46 @@ export default function Management() {
     }
   };
 
+  const toggleSelectedDocument = (id: number) => {
+    setSelectedDocIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const deleteSelectedDocuments = async () => {
+    if (!projectId || selectedDocIds.size === 0) return;
+    const selectedDocs = cleanupDocs.filter((doc) => selectedDocIds.has(doc.id));
+    const names = selectedDocs.map((doc) => doc.fileName).join('\n');
+    const confirmed = window.confirm(`Permanently delete ${selectedDocs.length} selected document(s)?\n\n${names}`);
+    if (!confirmed) return;
+
+    setLoading(true);
+    setCurrentAction('deleteSelectedDocuments');
+    resetStatus();
+    try {
+      let deleted = 0;
+      for (const doc of selectedDocs) {
+        const result = await DocumentsApi.delete(projectId, doc.id);
+        if (result.deleted) {
+          deleted += 1;
+        }
+      }
+      await loadCleanupDocuments();
+      setMessage(`Deleted ${deleted} document(s). Numbering counters were recalculated for affected series.`);
+    } catch (err: unknown) {
+      setError(errorMessage(err, 'Failed to delete selected documents'));
+    } finally {
+      setLoading(false);
+      setCurrentAction(null);
+    }
+  };
+
   return (
     <div className="page">
       <h1>Management</h1>
@@ -375,6 +464,75 @@ MIC-GAI-BST-002,DocControl Scope`}
               <button onClick={exportDocsCsv} disabled={loading}>Export Documents CSV</button>
               <button onClick={exportDocsJson} disabled={loading}>Export Documents JSON</button>
             </div>
+          </div>
+
+          <div className="card" style={{ marginTop: 12 }}>
+            <strong>Document cleanup</strong>
+            <p className="muted" style={{ margin: '8px 0' }}>
+              Search and delete incorrect document records. Deleting all records in a code series resets its next number to 001.
+            </p>
+            <div className="row" style={{ gap: 8, alignItems: 'center', marginBottom: 12 }}>
+              <input
+                value={cleanupQuery}
+                onChange={(e) => setCleanupQuery(e.target.value)}
+                placeholder="Search code, file name, or free text"
+              />
+              <button onClick={() => loadCleanupDocuments()} disabled={loading}>
+                {loading && currentAction === 'loadCleanupDocuments' ? 'Loading...' : 'Search'}
+              </button>
+              <button
+                onClick={() => {
+                  setCleanupQuery('');
+                  loadCleanupDocuments('');
+                }}
+                disabled={loading}
+                style={{ background: '#334155', color: '#e2e8f0' }}
+              >
+                Clear
+              </button>
+              <button
+                onClick={deleteSelectedDocuments}
+                disabled={loading || selectedDocIds.size === 0}
+                style={{ background: '#b91c1c' }}
+              >
+                {loading && currentAction === 'deleteSelectedDocuments'
+                  ? 'Deleting...'
+                  : `Delete selected (${selectedDocIds.size})`}
+              </button>
+            </div>
+            <p className="muted" style={{ margin: '0 0 8px' }}>
+              Showing {cleanupDocs.length} of {cleanupTotal} matching document(s).
+            </p>
+            {cleanupDocs.length === 0 ? (
+              <p className="muted">No documents found.</p>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Select</th>
+                    <th>File name</th>
+                    <th>Free text</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cleanupDocs.map((doc) => (
+                    <tr key={doc.id}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedDocIds.has(doc.id)}
+                          onChange={() => toggleSelectedDocument(doc.id)}
+                        />
+                      </td>
+                      <td className="muted">{doc.fileName}</td>
+                      <td className="muted">{doc.freeText ?? ''}</td>
+                      <td className="muted">{new Date(doc.createdAtUtc).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
 
           <div className="card" style={{ marginTop: 12 }}>

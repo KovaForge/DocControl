@@ -8,10 +8,10 @@ Require environment-only configuration:
 
 ```bash
 export DOCCONTROL_BASE_URL="https://dc.delpach.com"
-export DOCCONTROL_TOKEN="<bearer token from DocControl auth>"
+export DOCCONTROL_TOKEN="<agent token from DocControl Settings>"
 ```
 
-Never paste or log `DOCCONTROL_TOKEN`. If a live command fails with auth errors, report that auth is blocked and ask for a valid token or equivalent configured secret.
+Users create agent tokens in DocControl under Settings. Never paste or log `DOCCONTROL_TOKEN`. If a live command fails with auth errors, report that auth is blocked and ask for a valid token or equivalent configured secret.
 
 ## Commands
 
@@ -49,3 +49,5 @@ Required header:
 ```text
 Authorization: Bearer <DOCCONTROL_TOKEN>
 ```
+
+The CLI sends `X-DocControl-Token` for Azure Static Web Apps compatibility; direct API clients may use `Authorization: Bearer`, `X-DocControl-Token`, or `x-api-key`.

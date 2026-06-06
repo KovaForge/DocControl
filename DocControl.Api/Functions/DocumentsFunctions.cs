@@ -236,13 +236,13 @@ public sealed class DocumentsFunctions
         var (ok, auth, _) = await authFactory.BindAsync(req, req.FunctionContext.CancellationToken);
         if (!ok || auth is null) return await req.ErrorAsync(HttpStatusCode.Unauthorized, "Auth required");
         if (!auth.MfaEnabled) return await req.ErrorAsync(HttpStatusCode.Forbidden, "MFA required");
-        if (!await IsAtLeast(projectId, auth.UserId, Roles.Contributor, req.FunctionContext.CancellationToken)) return await req.ErrorAsync(HttpStatusCode.Forbidden, "Contributor role required");
+        if (!await IsAtLeast(projectId, auth.UserId, Roles.Owner, req.FunctionContext.CancellationToken)) return await req.ErrorAsync(HttpStatusCode.Forbidden, "Owner role required");
 
         var doc = await documentRepository.GetByIdAsync(projectId, documentId, req.FunctionContext.CancellationToken);
         if (doc is null) return await req.ErrorAsync(HttpStatusCode.NotFound, "Not found");
 
         var affected = await documentRepository.DeleteAsync(projectId, documentId, req.FunctionContext.CancellationToken).ConfigureAwait(false);
-        await auditRepository.InsertAsync(projectId, "DocumentDeleted", doc.FileName, auth.UserId, DateTime.UtcNow, documentId, req.FunctionContext.CancellationToken).ConfigureAwait(false);
+        await auditRepository.InsertAsync(projectId, "DocumentDeleted", doc.FileName, auth.UserId, DateTime.UtcNow, null, req.FunctionContext.CancellationToken).ConfigureAwait(false);
         return await req.ToJsonAsync(new { deleted = affected > 0, documentId }, HttpStatusCode.OK, jsonOptions);
     }
 

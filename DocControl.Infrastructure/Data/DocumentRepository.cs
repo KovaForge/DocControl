@@ -251,11 +251,65 @@ public sealed class DocumentRepository
     {
         await using var conn = factory.Create();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        const string sql = @"DELETE FROM Documents WHERE ProjectId = @ProjectId AND Id = @Id;";
-        await using var cmd = new NpgsqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@ProjectId", projectId);
-        cmd.Parameters.AddWithValue("@Id", documentId);
-        return await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        const string selectSql = @"
+            SELECT CodeSeriesId
+            FROM Documents
+            WHERE ProjectId = @ProjectId AND Id = @Id
+            FOR UPDATE;";
+        long? codeSeriesId = null;
+        await using (var selectCmd = new NpgsqlCommand(selectSql, conn, (NpgsqlTransaction)tx))
+        {
+            selectCmd.Parameters.AddWithValue("@ProjectId", projectId);
+            selectCmd.Parameters.AddWithValue("@Id", documentId);
+            var result = await selectCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (result is not null and not DBNull)
+            {
+                codeSeriesId = Convert.ToInt64(result);
+            }
+        }
+
+        if (codeSeriesId is null)
+        {
+            await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return 0;
+        }
+
+        const string clearAuditSql = "UPDATE Audit SET DocumentId = NULL WHERE ProjectId = @ProjectId AND DocumentId = @Id;";
+        await using (var clearAuditCmd = new NpgsqlCommand(clearAuditSql, conn, (NpgsqlTransaction)tx))
+        {
+            clearAuditCmd.Parameters.AddWithValue("@ProjectId", projectId);
+            clearAuditCmd.Parameters.AddWithValue("@Id", documentId);
+            await clearAuditCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        const string deleteSql = @"DELETE FROM Documents WHERE ProjectId = @ProjectId AND Id = @Id;";
+        int affected;
+        await using (var deleteCmd = new NpgsqlCommand(deleteSql, conn, (NpgsqlTransaction)tx))
+        {
+            deleteCmd.Parameters.AddWithValue("@ProjectId", projectId);
+            deleteCmd.Parameters.AddWithValue("@Id", documentId);
+            affected = await deleteCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        const string resetSeriesSql = @"
+            UPDATE CodeSeries
+            SET NextNumber = COALESCE((
+                SELECT MAX(Number) + 1
+                FROM Documents
+                WHERE ProjectId = @ProjectId AND CodeSeriesId = @CodeSeriesId
+            ), 1)
+            WHERE ProjectId = @ProjectId AND Id = @CodeSeriesId;";
+        await using (var resetSeriesCmd = new NpgsqlCommand(resetSeriesSql, conn, (NpgsqlTransaction)tx))
+        {
+            resetSeriesCmd.Parameters.AddWithValue("@ProjectId", projectId);
+            resetSeriesCmd.Parameters.AddWithValue("@CodeSeriesId", codeSeriesId.Value);
+            await resetSeriesCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return affected;
     }
 
     public async Task ClearAllAsync(long projectId, CancellationToken cancellationToken = default)
@@ -276,6 +330,13 @@ public sealed class DocumentRepository
         {
             cmdDocs.Parameters.AddWithValue("@ProjectId", projectId);
             await cmdDocs.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        const string resetSeries = "UPDATE CodeSeries SET NextNumber = 1 WHERE ProjectId = @ProjectId;";
+        await using (var cmdSeries = new NpgsqlCommand(resetSeries, conn, (NpgsqlTransaction)tx))
+        {
+            cmdSeries.Parameters.AddWithValue("@ProjectId", projectId);
+            await cmdSeries.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);

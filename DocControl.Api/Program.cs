@@ -52,6 +52,7 @@ builder.Services.AddSingleton<UserRepository>();
 builder.Services.AddSingleton<UserAuthRepository>();
 builder.Services.AddSingleton<ProjectMemberRepository>();
 builder.Services.AddSingleton<ProjectInviteRepository>();
+builder.Services.AddSingleton<AgentTokenRepository>();
 builder.Services.AddSingleton<AuthContextFactory>();
 builder.Services.AddSingleton<AuthTokenService>();
 builder.Services.AddSingleton<MicrosoftTokenValidator>();

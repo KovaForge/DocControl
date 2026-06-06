@@ -9,24 +9,27 @@ using Microsoft.Extensions.Hosting;
 
 namespace DocControl.Api.Infrastructure;
 
-public sealed record AuthContext(long UserId, string Email, string DisplayName, bool MfaEnabled);
+public sealed record AuthContext(long UserId, string Email, string DisplayName, bool MfaEnabled, bool IsAgentToken = false);
 
 public sealed class AuthContextFactory
 {
     private readonly UserRepository userRepository;
     private readonly UserAuthRepository userAuthRepository;
+    private readonly AgentTokenRepository agentTokenRepository;
     private readonly AuthTokenService authTokenService;
     private readonly bool allowLegacyHeader;
 
     public AuthContextFactory(
         UserRepository userRepository,
         UserAuthRepository userAuthRepository,
+        AgentTokenRepository agentTokenRepository,
         AuthTokenService authTokenService,
         IHostEnvironment environment,
         IConfiguration configuration)
     {
         this.userRepository = userRepository;
         this.userAuthRepository = userAuthRepository;
+        this.agentTokenRepository = agentTokenRepository;
         this.authTokenService = authTokenService;
         allowLegacyHeader = environment.IsDevelopment()
                             || configuration.GetValue<bool>("ALLOW_LEGACY_AUTH");
@@ -53,15 +56,31 @@ public sealed class AuthContextFactory
             return (true, new AuthContext(user.Id, user.Email, user.DisplayName, true), null);
         }
 
-        if (TryGetBearer(req, out var token) && authTokenService.TryValidate(token, out var tokenUserId, out var tokenEmail, out var tokenMfaSatisfied))
+        if (TryGetBearer(req, out var token))
         {
-            var user = await userRepository.GetByIdAsync(tokenUserId, cancellationToken).ConfigureAwait(false);
-            if (user is not null && string.Equals(user.Email, tokenEmail, StringComparison.OrdinalIgnoreCase))
+            if (authTokenService.TryValidate(token, out var tokenUserId, out var tokenEmail, out var tokenMfaSatisfied))
             {
-                await userAuthRepository.EnsureExistsAsync(user.Id, cancellationToken).ConfigureAwait(false);
-                var auth = await userAuthRepository.GetAsync(user.Id, cancellationToken).ConfigureAwait(false);
-                var mfaEnabled = tokenMfaSatisfied || (auth?.MfaEnabled ?? false);
-                return (true, new AuthContext(user.Id, user.Email, user.DisplayName, mfaEnabled), null);
+                var user = await userRepository.GetByIdAsync(tokenUserId, cancellationToken).ConfigureAwait(false);
+                if (user is not null && string.Equals(user.Email, tokenEmail, StringComparison.OrdinalIgnoreCase))
+                {
+                    await userAuthRepository.EnsureExistsAsync(user.Id, cancellationToken).ConfigureAwait(false);
+                    var auth = await userAuthRepository.GetAsync(user.Id, cancellationToken).ConfigureAwait(false);
+                    var mfaEnabled = tokenMfaSatisfied || (auth?.MfaEnabled ?? false);
+                    return (true, new AuthContext(user.Id, user.Email, user.DisplayName, mfaEnabled), null);
+                }
+
+                return (false, null, await req.ErrorAsync(System.Net.HttpStatusCode.Unauthorized, "Invalid token"));
+            }
+
+            var agentToken = await agentTokenRepository.ValidateAsync(token, cancellationToken).ConfigureAwait(false);
+            if (agentToken is not null)
+            {
+                var user = await userRepository.GetByIdAsync(agentToken.UserId, cancellationToken).ConfigureAwait(false);
+                if (user is not null)
+                {
+                    await userAuthRepository.EnsureExistsAsync(user.Id, cancellationToken).ConfigureAwait(false);
+                    return (true, new AuthContext(user.Id, user.Email, user.DisplayName, true, true), null);
+                }
             }
 
             return (false, null, await req.ErrorAsync(System.Net.HttpStatusCode.Unauthorized, "Invalid token"));
@@ -105,6 +124,15 @@ public sealed class AuthContextFactory
         if (req.Headers.TryGetValues("X-DocControl-Token", out var docControlValues))
         {
             token = docControlValues.FirstOrDefault()?.Trim() ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                return true;
+            }
+        }
+
+        if (req.Headers.TryGetValues("x-api-key", out var apiKeyValues))
+        {
+            token = apiKeyValues.FirstOrDefault()?.Trim() ?? string.Empty;
             if (!string.IsNullOrWhiteSpace(token))
             {
                 return true;

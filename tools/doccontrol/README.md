@@ -4,7 +4,14 @@ Small env-configured helper for safe DocControl reads and remote document-name a
 
 ## Configuration
 
-Credentials stay outside the repo. Preferred setup is Microsoft device-code login:
+Credentials stay outside the repo. Preferred setup for agents is to create a personal agent token on the DocControl Settings page, then provide it through the environment:
+
+```bash
+export DOCCONTROL_BASE_URL="https://dc.delpach.com"
+export DOCCONTROL_TOKEN="<agent token from Settings>"
+```
+
+Interactive users can also use Microsoft device-code login:
 
 ```bash
 bin/doccontrol login microsoft
@@ -12,15 +19,8 @@ bin/doccontrol login microsoft
 
 The command opens a Microsoft device-code flow, exchanges the verified Microsoft identity for a DocControl bearer token that satisfies DocControl's MFA gate, and stores only the DocControl token in `~/.config/doccontrol/config.json` with user-only file permissions. Microsoft tokens are not stored.
 
-Environment overrides still work:
-
-```bash
-export DOCCONTROL_BASE_URL="https://dc.delpach.com"
-export DOCCONTROL_TOKEN="<doccontrol bearer token>"
-```
-
-`DOCCONTROL_TOKEN` is the bearer token returned by DocControl auth. The CLI never prints the token.
-Authenticated CLI requests send this token in `X-DocControl-Token` because Azure Static Web Apps can consume the standard `Authorization` header before forwarding requests to Functions. The API still validates the same signed DocControl token server-side.
+`DOCCONTROL_TOKEN` is either a Settings-generated agent token or the bearer token returned by DocControl auth. The CLI never prints the token.
+Authenticated CLI requests send this token in `X-DocControl-Token` because Azure Static Web Apps can consume the standard `Authorization` header before forwarding requests to Functions. The API validates either a signed DocControl login token or a hashed Settings-generated agent token server-side.
 
 ## Commands
 
@@ -57,7 +57,7 @@ Standalone level code commands manage project-level dictionaries such as Level 1
 - `preview-name` calls `/documents/preview` and reports `"mutated": false`.
 - `allocate-name` calls `/documents` and creates a saved remote document record.
 - Before allocation, the CLI searches existing documents for matching levels and free text. If matches exist, it returns `duplicate-risk` and does not create anything unless `--force` is supplied.
-- No destructive DocControl endpoints are exposed.
+- Destructive cleanup is limited to the explicit `delete-documents --ids ...` command and should only be used after direct user confirmation.
 - Auth failures are sanitized and do not echo tokens.
 - `login microsoft` stores only the minted DocControl bearer token locally, never the Microsoft id token.
 - `logout` clears the stored DocControl token.
